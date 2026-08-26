@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Macquarie Fields Property Investor</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      width: 420px;
+      max-height: 580px;
+      font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: #0f1724;
+      color: #e2e8f0;
+      overflow-y: auto;
+    }
+
+    /* Header */
+    .header {
+      background: linear-gradient(135deg, #0f1724 0%, #1a2744 100%);
+      padding: 18px 20px 14px;
+      border-bottom: 1px solid #1e3050;
+    }
+    .header-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 4px;
+    }
+    .logo-icon {
+      width: 28px; height: 28px;
+      background: #10b981;
+      border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 16px;
+    }
+    .header h1 {
+      font-size: 16px;
+      font-weight: 700;
+      color: #f1f5f9;
+    }
+    .header .subtitle {
+      font-size: 11px;
+      color: #64748b;
+      margin-left: 38px;
+    }
+
+    /* Tabs */
+    .tabs {
+      display: flex;
+      background: #131d2e;
+      border-bottom: 1px solid #1e3050;
+    }
+    .tab {
+      flex: 1;
+      padding: 10px 8px;
+      text-align: center;
+      font-size: 12px;
+      font-weight: 500;
+      color: #64748b;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      transition: all 0.2s;
+    }
+    .tab:hover { color: #94a3b8; }
+    .tab.active {
+      color: #10b981;
+      border-bottom-color: #10b981;
+    }
+
+    /* Tab Content */
+    .tab-content { display: none; padding: 16px 20px 20px; }
+    .tab-content.active { display: block; }
+
+    /* Stat Cards */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+    .stat-card {
+      background: #1a2744;
+      border-radius: 10px;
+      padding: 14px;
+      border: 1px solid #1e3050;
+    }
+    .stat-label {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #64748b;
+      margin-bottom: 4px;
+    }
+    .stat-value {
+      font-size: 20px;
+      font-weight: 700;
+      color: #f1f5f9;
+    }
+    .stat-change {
+      font-size: 11px;
+      font-weight: 600;
+      margin-top: 2px;
+    }
+    .stat-change.up { color: #10b981; }
+    .stat-change.down { color: #ef4444; }
+
+    /* Sections */
+    .section-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: #94a3b8;
+      margin-bottom: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    /* Chart area */
+    .chart-container {
+      background: #1a2744;
+      border-radius: 10px;
+      padding: 16px;
+      margin-bottom: 16px;
+      border: 1px solid #1e3050;
+    }
+    .chart-title {
+      font-size: 12px;
+      font-weight: 600;
+      color: #94a3b8;
+      margin-bottom: 12px;
+    }
+    .chart-bars {
+      display: flex;
+      align-items: flex-end;
+      gap: 6px;
+      height: 100px;
+    }
+    .chart-bar-group {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+    }
+    .chart-bar {
+      width: 100%;
+      max-width: 36px;
+      background: linear-gradient(to top, #10b981, #34d399);
+      border-radius: 4px 4px 0 0;
+      min-height: 4px;
+      position: relative;
+    }
+    .chart-bar.secondary {
+      background: linear-gradient(to top, #3b82f6, #60a5fa);
+    }
+    .chart-label {
+      font-size: 9px;
+      color: #64748b;
+    }
+    .chart-val {
+      font-size: 9px;
+      color: #94a3b8;
+      font-weight: 600;
+    }
+
+    /* Property List */
+    .property-list { display: flex; flex-direction: column; gap: 10px; }
+    .property-item {
+      background: #1a2744;
+      border-radius: 10px;
+      padding: 14px;
+      border: 1px solid #1e3050;
+      cursor: pointer;
+      transition: border-color 0.2s;
+    }
+    .property-item:hover { border-color: #10b981; }
+    .property-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 6px;
+    }
+    .property-addr {
+      font-size: 13px;
+      font-weight: 600;
+      color: #e2e8f0;
+      max-width: 240px;
+    }
+    .property-price {
+      font-size: 13px;
+      font-weight: 700;
+      color: #10b981;
+    }
+    .property-meta {
+      display: flex;
+      gap: 12px;
+      font-size: 11px;
+      color: #64748b;
+      margin-bottom: 8px;
+    }
+    .score-bar-outer {
+      height: 6px;
+      background: #0f1724;
+      border-radius: 3px;
+      overflow: hidden;
+    }
+    .score-bar-inner {
+      height: 100%;
+      border-radius: 3px;
+      transition: width 0.5s;
+    }
+    .score-label {
+      display: flex;
+      justify-content: space-between;
+      font-size: 10px;
+      margin-top: 4px;
+    }
+    .score-label .label { color: #64748b; }
+    .score-label .value { font-weight: 600; }
+    .score-high { color: #10b981; }
+    .score-mid { color: #f59e0b; }
+    .score-low { color: #ef4444; }
+
+    /* Tags */
+    .tags { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 8px; }
+    .tag {
+      font-size: 10px;
+      padding: 2px 8px;
+      border-radius: 10px;
+      background: #0f1724;
+      color: #94a3b8;
+      border: 1px solid #1e3050;
+    }
+    .tag.positive { color: #10b981; border-color: #065f46; background: #064e3b20; }
+    .tag.caution { color: #f59e0b; border-color: #92400e; background: #92400e20; }
+
+    /* AI Panel */
+    .ai-panel {
+      background: linear-gradient(135deg, #064e3b 0%, #1a2744 100%);
+      border-radius: 10px;
+      padding: 16px;
+      margin-bottom: 16px;
+      border: 1px solid #10b98140;
+    }
+    .ai-panel h3 {
+      font-size: 13px;
+      font-weight: 600;
+      color: #34d399;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .ai-panel p {
+      font-size: 12px;
+      color: #a7f3d0;
+      line-height: 1.6;
+    }
+
+    /* Button */
+    .btn {
+      width: 100%;
+      padding: 12px;
+      border: none;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.2s;
+    }
+    .btn:hover { opacity: 0.9; }
+    .btn-primary { background: #10b981; color: #fff; }
+    .btn-secondary { background: #1e3050; color: #94a3b8; }
+
+    /* Settings */
+    .setting-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px 0;
+      border-bottom: 1px solid #1e3050;
+    }
+    .setting-row:last-child { border-bottom: none; }
+    .setting-label { font-size: 13px; color: #e2e8f0; }
+    .setting-desc { font-size: 11px; color: #64748b; margin-top: 2px; }
+    input[type="text"] {
+      background: #0f1724;
+      border: 1px solid #1e3050;
+      border-radius: 6px;
+      padding: 8px 12px;
+      color: #e2e8f0;
+      font-size: 12px;
+      width: 160px;
+    }
+    input[type="text"]:focus {
+      outline: none;
+      border-color: #10b981;
+    }
+
+    /* Scrape status */
+    .scrape-status {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 10px 14px;
+      background: #1a2744;
+      border-radius: 8px;
+      font-size: 12px;
+      color: #94a3b8;
+      margin-bottom: 16px;
+    }
+    .status-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+    }
+    .status-dot.active { background: #10b981; }
+    .status-dot.inactive { background: #64748b; }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: #0f1724; }
+    ::-webkit-scrollbar-thumb { background: #1e3050; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #2a3f5f; }
+
+    /* Legend */
+    .chart-legend {
+      display: flex;
+      gap: 14px;
+      margin-top: 10px;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 10px;
+      color: #64748b;
+    }
+    .legend-dot {
+      width: 8px; height: 8px;
+      border-radius: 2px;
+    }
+
+    .loading-spinner {
+      width: 20px; height: 20px;
+      border: 2px solid #1e3050;
+      border-top-color: #10b981;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin: 20px auto;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .insight-list { display: flex; flex-direction: column; gap: 8px; }
+    .insight-item {
+      display: flex;
+      gap: 8px;
+      font-size: 12px;
+      color: #cbd5e1;
+      line-height: 1.5;
+    }
+    .insight-icon { flex-shrink: 0; margin-top: 2px; }
+  </style>
+</head>
+<body>
+  <!-- Header -->
+  <div class="header">
+    <div class="header-row">
+      <div class="logo-icon">🏠</div>
+      <h1>Macquarie Fields Investor</h1>
+    </div>
+    <div class="subtitle">NSW 2564 · AI-Powered Property Investment Analysis</div>
+  </div>
+
+  <!-- Tabs -->
+  <div class="tabs">
+    <div class="tab active" data-tab="overview">Overview</div>
+    <div class="tab" data-tab="properties">Properties</div>
+    <div class="tab" data-tab="ai">AI Insights</div>
+    <div class="tab" data-tab="settings">Settings</div>
+  </div>
+
+  <!-- OVERVIEW TAB -->
+  <div class="tab-content active" id="tab-overview">
+    <div class="scrape-status">
+      <div class="status-dot active"></div>
+      <span>Market data updated · Sources: Domain, REA, CoreLogic, YIP</span>
+    </div>
+
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-label">Median House Price</div>
+        <div class="stat-value">$1.0M</div>
+        <div class="stat-change up">▲ 11.1% annual</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Median Rent (House)</div>
+        <div class="stat-value">$620/wk</div>
+        <div class="stat-change up">▲ 8.8% annual</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Rental Yield</div>
+        <div class="stat-value">3.32%</div>
+        <div class="stat-change down">▼ vs 3.5% avg</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Avg Days on Market</div>
+        <div class="stat-value">13</div>
+        <div class="stat-change up">Fast-moving</div>
+      </div>
+    </div>
+
+    <!-- Price History Chart -->
+    <div class="chart-container">
+      <div class="chart-title">Median House Price History (5 Years)</div>
+      <div class="chart-bars" id="price-chart"></div>
+      <div class="chart-legend">
+        <div class="legend-item"><div class="legend-dot" style="background:#10b981"></div> Median Price</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#3b82f6"></div> Sales Volume</div>
+      </div>
+    </div>
+
+    <!-- Key Metrics -->
+    <div class="chart-container">
+      <div class="chart-title">Suburb Snapshot</div>
+      <div class="insight-list">
+        <div class="insight-item">
+          <span class="insight-icon">📊</span>
+          <span><strong>98 houses</strong> and <strong>76 units</strong> sold in past 12 months</span>
+        </div>
+        <div class="insight-item">
+          <span class="insight-icon">👥</span>
+          <span>Population <strong>14,023</strong> · 37.4% renters · Predominant age: 0-9 years</span>
+        </div>
+        <div class="insight-item">
+          <span class="insight-icon">🏫</span>
+          <span>Selective school zone · Near Macquarie Fields Public School</span>
+        </div>
+        <div class="insight-item">
+          <span class="insight-icon">🚉</span>
+          <span>Macquarie Fields Station (T8 line) · 38km SW of Sydney CBD</span>
+        </div>
+        <div class="insight-item">
+          <span class="insight-icon">📈</span>
+          <span>Price range: <strong>$666k – $2.8M</strong> (houses) · Typical: 3 bed / 2 bath</span>
+        </div>
+        <div class="insight-item">
+          <span class="insight-icon">🏗️</span>
+          <span>Campbelltown LGA · 6.9 km² · 38 parks covering 27.7% of area</span>
+        </div>
+      </div>
+    </div>
+
+    <button class="btn btn-primary" id="btn-scrape-now">🔍 Scrape Latest Listings Now</button>
+  </div>
+
+  <!-- PROPERTIES TAB -->
+  <div class="tab-content" id="tab-properties">
+    <div class="section-title">Top Investment Opportunities</div>
+    <div class="property-list" id="property-list"></div>
+  </div>
+
+  <!-- AI INSIGHTS TAB -->
+  <div class="tab-content" id="tab-ai">
+    <div class="ai-panel">
+      <h3>🤖 AI Investment Summary</h3>
+      <p id="ai-summary">Click "Analyse with AI" to get a personalised investment recommendation based on current Macquarie Fields market data, historical trends, and available listings.</p>
+    </div>
+
+    <div class="section-title">Key Investment Indicators</div>
+    <div class="chart-container">
+      <div class="insight-list">
+        <div class="insight-item">
+          <span class="insight-icon">✅</span>
+          <span><strong>Strong capital growth:</strong> 11.1% annual house price growth well above Sydney avg of ~5%</span>
+        </div>
+        <div class="insight-item">
+          <span class="insight-icon">✅</span>
+          <span><strong>High demand:</strong> Properties sell in 13 days on average — very fast turnover</span>
+        </div>
+        <div class="insight-item">
+          <span class="insight-icon">✅</span>
+          <span><strong>Growing family suburb:</strong> Predominant age 0-9 years suggests strong family demand</span>
+        </div>
+        <div class="insight-item">
+          <span class="insight-icon">⚠️</span>
+          <span><strong>Yield below average:</strong> 3.32% rental yield below Sydney metro average of ~3.5%</span>
+        </div>
+        <div class="insight-item">
+          <span class="insight-icon">✅</span>
+          <span><strong>Infrastructure:</strong> Train station, selective school zone, Glenquarie Shopping Centre</span>
+        </div>
+        <div class="insight-item">
+          <span class="insight-icon">✅</span>
+          <span><strong>Affordable entry:</strong> Still under $1M median vs $1.6M+ in comparable inner-west suburbs</span>
+        </div>
+      </div>
+    </div>
+
+    <button class="btn btn-primary" id="btn-ai-analyse" style="margin-bottom:10px">🤖 Analyse with AI</button>
+    <button class="btn btn-secondary" id="btn-ai-suggest">📊 Suggest Best Property to Invest</button>
+  </div>
+
+  <!-- SETTINGS TAB -->
+  <div class="tab-content" id="tab-settings">
+    <div class="section-title">Backend API</div>
+
+    <div class="setting-row">
+      <div>
+        <div class="setting-label">Backend API URL</div>
+        <div class="setting-desc">Your property investor backend server</div>
+      </div>
+    </div>
+    <input type="text" id="api-base-input" placeholder="http://localhost:3001" style="width:100%; margin-bottom:8px">
+    <div class="scrape-status" id="api-status">
+      <div class="status-dot inactive"></div>
+      <span>Not checked yet</span>
+    </div>
+    <button class="btn btn-secondary" id="btn-test-api" style="margin-bottom:16px">🔌 Test Connection</button>
+
+    <div class="section-title">Configuration</div>
+
+    <div class="setting-row">
+      <div>
+        <div class="setting-label">Anthropic API Key</div>
+        <div class="setting-desc">Required for AI analysis features</div>
+      </div>
+    </div>
+    <input type="text" id="api-key-input" placeholder="sk-ant-..." style="width:100%; margin-bottom:16px">
+
+    <div class="setting-row">
+      <div>
+        <div class="setting-label">Max Budget</div>
+        <div class="setting-desc">Filter properties above this price</div>
+      </div>
+      <input type="text" id="max-budget" placeholder="e.g. 1200000" style="width:120px">
+    </div>
+    <div class="setting-row">
+      <div>
+        <div class="setting-label">Min Bedrooms</div>
+        <div class="setting-desc">Minimum bedroom count</div>
+      </div>
+      <input type="text" id="min-beds" placeholder="e.g. 3" style="width:120px">
+    </div>
+    <div class="setting-row">
+      <div>
+        <div class="setting-label">Property Types</div>
+        <div class="setting-desc">House, Unit, Townhouse, Villa</div>
+      </div>
+      <input type="text" id="prop-types" placeholder="House, Villa" style="width:120px">
+    </div>
+    <div style="margin-top:16px">
+      <button class="btn btn-primary" id="btn-save-settings">Save Settings</button>
+    </div>
+  </div>
+
+  <script src="src/popup.js"></script>
+</body>
+</html>
