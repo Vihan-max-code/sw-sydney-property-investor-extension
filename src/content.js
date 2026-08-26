@@ -317,15 +317,15 @@
       let isEstimated = false;
       const f = extractFeatures(text);
 
+      // If no price found, ALWAYS estimate for listing cards
+      // (REA often shows no price text at all, not just "Contact Agent")
       if (!price) {
-        const hasNoPrice = /contact\s*agent|auction|expression|offers?\s*(over|above|from)|price\s*guide|by\s*negotiation|eoi|under\s*offer/i.test(text);
-        if (hasNoPrice || f.beds > 0) {
-          const estByBed = cardSubData?.estByBed || {};
-          price = estByBed[Math.min(Math.max(f.beds || 3, 1), 6)] || cardSubData?.house?.medianPrice || 900000;
-          const isUnit = /unit|apartment|studio|townhouse|villa/i.test(f.type);
-          if (isUnit) price = Math.round(price * 0.75);
-          isEstimated = true;
-        }
+        const estByBed = cardSubData?.estByBed || {};
+        const bedKey = Math.min(Math.max(f.beds || 3, 1), 6);
+        price = estByBed[bedKey] || cardSubData?.house?.medianPrice || 900000;
+        const isUnit = /unit|apartment|studio|townhouse|villa/i.test(f.type);
+        if (isUnit) price = Math.round(price * 0.75);
+        isEstimated = true;
       }
 
       if (!price) continue;
