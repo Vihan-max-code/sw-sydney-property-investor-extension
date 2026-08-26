@@ -292,6 +292,7 @@
 
     console.log(`[MFI] Search: found ${cards.length} cards on ${site}`);
 
+    const cardQueue = [];
     for (const card of cards) {
       if (card.dataset.mfiDone) continue;
       card.dataset.mfiDone = "1";
@@ -329,26 +330,33 @@
 
       if (!price) continue;
 
-      // Call backend for analysis
-      let a = null;
-      const apiResult = await fetchAnalysis(cardSuburb.name, cardSuburb.postcode, price, f.beds, f.baths, f.land, f.type);
-      if (apiResult?.analysis) {
-        a = apiResult.analysis;
-        a.price = price;
-      }
-
-      if (!a) continue;
-
-      let listedPrice = "—";
-      const pm = text.match(/\$\d{1,3}(?:,\d{3}){1,2}\s*[-–]\s*\$\d{1,3}(?:,\d{3}){1,2}|\$\d{1,3}(?:,\d{3}){1,2}/);
-      if (pm) listedPrice = pm[0].trim();
-      if (isEstimated) listedPrice = "Contact Agent";
-
-      const bar = document.createElement("div");
-      bar.className = "mfi-bar";
-      bar.innerHTML = buildBarHtml(a, listedPrice, isEstimated, subName);
-      card.after(bar);
+      // Queue the analysis (don't await here — batch later)
+      cardQueue.push({ card, cardSuburb, price, f, isEstimated, subName });
     }
+
+    // Process all cards in parallel (batch API calls)
+    console.log(`[MFI] Processing ${cardQueue.length} cards in parallel`);
+    const results = await Promise.allSettled(
+      cardQueue.map(async ({ card, cardSuburb, price, f, isEstimated, subName }) => {
+        const apiResult = await fetchAnalysis(cardSuburb.name, cardSuburb.postcode, price, f.beds, f.baths, f.land, f.type);
+        if (!apiResult?.analysis) return;
+
+        const a = apiResult.analysis;
+        a.price = price;
+
+        let listedPrice = "—";
+        const text = card.textContent || "";
+        const pm = text.match(/\$\d{1,3}(?:,\d{3}){1,2}\s*[-–]\s*\$\d{1,3}(?:,\d{3}){1,2}|\$\d{1,3}(?:,\d{3}){1,2}/);
+        if (pm) listedPrice = pm[0].trim();
+        if (isEstimated) listedPrice = "Contact Agent";
+
+        const bar = document.createElement("div");
+        bar.className = "mfi-bar";
+        bar.innerHTML = buildBarHtml(a, listedPrice, isEstimated, subName);
+        card.after(bar);
+      })
+    );
+    console.log(`[MFI] Done: ${results.filter(r => r.status === 'fulfilled').length} succeeded, ${results.filter(r => r.status === 'rejected').length} failed`);
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
