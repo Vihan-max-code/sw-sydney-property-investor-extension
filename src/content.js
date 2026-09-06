@@ -1,24 +1,22 @@
-// ─── SW Sydney Property Investor — Content Script v10 ─────────────────────────
-// Pulls ALL data from backend API. No hardcoded suburb data.
-// Backend: http://localhost:3001 (configurable in extension settings)
+// ─── SW Sydney Property Investor — Content Script v11 ─────────────────────────
+// Clean minimal display: Score, Weekly Rent, Gross Yield, 5yr Projection, DOM
+// No comparison tables. Just our analysis.
 
 (function () {
   "use strict";
 
-  // ─── CONFIG ─────────────────────────────────────────────────────────────────
-  // API calls are routed through the background service worker
-  // to avoid HTTPS→HTTP mixed content blocks.
+  let API_BASE = "http://localhost:3001";
+  if (typeof chrome !== "undefined" && chrome.storage?.local) {
+    chrome.storage.local.get("apiBase", (d) => { if (d.apiBase) API_BASE = d.apiBase; });
+  }
 
   const site = location.hostname.includes("domain") ? "domain"
              : location.hostname.includes("realestate") ? "rea" : "other";
-  const siteName = site === "rea" ? "realestate.com.au" : site === "domain" ? "domain.com.au" : "Listing Site";
-
   let lastUrl = "";
-  let suburbCache = {}; // In-memory cache for this session
+  let suburbCache = {};
 
   // ─── SUBURB DETECTION ───────────────────────────────────────────────────────
 
-  // Known suburb patterns to match in URLs
   const SUBURB_PATTERNS = [
     { regex: /macquarie[\-\+%20\s]*fields/i, name: "macquarie fields", postcode: "2564" },
     { regex: /minto(?![\-\s]heights)/i, name: "minto", postcode: "2566" },
@@ -26,10 +24,8 @@
     { regex: /glenfield/i, name: "glenfield", postcode: "2167" },
     { regex: /holsworthy/i, name: "holsworthy", postcode: "2173" },
     { regex: /east[\-\+%20\s]*hills/i, name: "east hills", postcode: "2213" },
-    // Add more suburbs here — or they'll be detected from the backend dynamically
   ];
 
-  // Postcodes as fallback
   const POSTCODE_MAP = {
     "2564": "macquarie fields", "2566": "minto", "2560": "leumeah",
     "2167": "glenfield", "2173": "holsworthy", "2213": "east hills"
@@ -37,17 +33,8 @@
 
   function detectSuburbFromUrl(url) {
     const u = (url || location.href).toLowerCase();
-
-    // Try pattern match first
-    for (const p of SUBURB_PATTERNS) {
-      if (p.regex.test(u)) return { name: p.name, postcode: p.postcode };
-    }
-
-    // Try postcode match
-    for (const [pc, name] of Object.entries(POSTCODE_MAP)) {
-      if (u.includes(pc)) return { name, postcode: pc };
-    }
-
+    for (const p of SUBURB_PATTERNS) { if (p.regex.test(u)) return { name: p.name, postcode: p.postcode }; }
+    for (const [pc, name] of Object.entries(POSTCODE_MAP)) { if (u.includes(pc)) return { name, postcode: pc }; }
     return null;
   }
 
@@ -67,89 +54,43 @@
     return false;
   }
 
-  // ─── API CALLS (background worker → fallback to direct fetch) ──────────────
-
-  let API_BASE = "http://localhost:3001";
-  if (typeof chrome !== "undefined" && chrome.storage?.local) {
-    chrome.storage.local.get("apiBase", (d) => { if (d.apiBase) API_BASE = d.apiBase; });
-  }
+  // ─── API ────────────────────────────────────────────────────────────────────
 
   function sendMsg(msg) {
     return new Promise((resolve) => {
-      const timeout = setTimeout(() => {
-        console.log("[MFI] Background worker timeout, trying direct fetch");
-        resolve(null);
-      }, 5000);
-
+      const timeout = setTimeout(() => resolve(null), 5000);
       try {
         chrome.runtime.sendMessage(msg, (resp) => {
           clearTimeout(timeout);
-          if (chrome.runtime.lastError) {
-            console.log("[MFI] sendMessage error:", chrome.runtime.lastError.message);
-            resolve(null);
-          } else {
-            resolve(resp?.data || null);
-          }
+          if (chrome.runtime.lastError) { resolve(null); return; }
+          resolve(resp?.data || null);
         });
-      } catch (e) {
-        clearTimeout(timeout);
-        console.log("[MFI] sendMessage exception:", e.message);
-        resolve(null);
-      }
+      } catch (e) { clearTimeout(timeout); resolve(null); }
     });
   }
 
-  // Direct fetch fallback (works when background worker is unavailable)
   async function directFetch(url, options) {
     try {
       const resp = await fetch(url, { ...options, mode: "cors" });
-      if (!resp.ok) return null;
-      return await resp.json();
-    } catch (e) {
-      console.log("[MFI] Direct fetch failed:", e.message);
-      return null;
-    }
+      return resp.ok ? await resp.json() : null;
+    } catch (e) { return null; }
   }
 
-  async function fetchSuburbData(suburbName, postcode) {
-    const cacheKey = suburbName.toLowerCase();
-    if (suburbCache[cacheKey] && (Date.now() - suburbCache[cacheKey]._fetchedAt < 3600000)) {
-      return suburbCache[cacheKey];
-    }
-
-    // Try background worker first
-    let data = await sendMsg({ action: "getSuburb", name: suburbName, postcode: postcode || "" });
-
-    // Fallback: direct fetch
-    if (!data) {
-      const slug = suburbName.replace(/\s+/g, "-");
-      data = await directFetch(`${API_BASE}/api/suburb/${slug}?postcode=${postcode || ""}`);
-    }
-
-    if (data) {
-      data._fetchedAt = Date.now();
-      suburbCache[cacheKey] = data;
-    } else {
-      console.log(`[MFI] No data for ${suburbName} from any source`);
-    }
+  async function fetchSuburbData(name, postcode) {
+    const key = name.toLowerCase();
+    if (suburbCache[key] && (Date.now() - suburbCache[key]._t < 3600000)) return suburbCache[key];
+    let data = await sendMsg({ action: "getSuburb", name, postcode: postcode || "" });
+    if (!data) data = await directFetch(`${API_BASE}/api/suburb/${name.replace(/\s+/g, "-")}?postcode=${postcode || ""}`);
+    if (data) { data._t = Date.now(); suburbCache[key] = data; }
     return data;
   }
 
   async function fetchAnalysis(suburb, postcode, price, beds, baths, landSize, propertyType) {
     const payload = { suburb, postcode, price, beds, baths, landSize, propertyType };
-
-    // Try background worker first
     let data = await sendMsg({ action: "analyse", payload });
-
-    // Fallback: direct fetch
-    if (!data) {
-      data = await directFetch(`${API_BASE}/api/analyse`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
-      });
-    }
-
+    if (!data) data = await directFetch(`${API_BASE}/api/analyse`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload)
+    });
     return data;
   }
 
@@ -157,123 +98,106 @@
 
   function parsePrice(s) {
     if (!s) return null;
-    const matches = s.match(/\$\s*[\d]{1,3}(?:,\d{3})*(?:\.\d+)?/g);
-    if (!matches) return null;
-    const vals = matches.map(m => parseInt(m.replace(/[$\s,]/g, ""))).filter(n => n >= 100000 && n <= 5000000);
-    if (!vals.length) return null;
-    return vals.length >= 2 ? Math.round((vals[0] + vals[1]) / 2) : vals[0];
+    const m = s.match(/\$\s*[\d]{1,3}(?:,\d{3})*(?:\.\d+)?/g);
+    if (!m) return null;
+    const v = m.map(x => parseInt(x.replace(/[$\s,]/g, ""))).filter(n => n >= 100000 && n <= 5000000);
+    return !v.length ? null : v.length >= 2 ? Math.round((v[0] + v[1]) / 2) : v[0];
   }
 
-  function fmt(n) {
-    if (n >= 1e6) return "$" + (n / 1e6).toFixed(2) + "M";
-    if (n >= 1e3) return "$" + (n / 1e3).toFixed(0) + "k";
-    return "$" + n;
-  }
+  function fmt(n) { return n >= 1e6 ? "$" + (n / 1e6).toFixed(2) + "M" : n >= 1e3 ? "$" + (n / 1e3).toFixed(0) + "k" : "$" + n; }
 
   function extractFeatures(t) {
     let beds = 0, baths = 0, cars = 0, land = 0, type = "House";
-    const b1 = t.match(/(\d+)\s*(?:Bed|bed)/i); if (b1) beds = Math.min(+b1[1], 12);
-    const b2 = t.match(/(\d+)\s*(?:Bath|bath)/i); if (b2) baths = Math.min(+b2[1], 8);
-    const b3 = t.match(/(\d+)\s*(?:Car|car|Park|park|Garag)/i); if (b3) cars = Math.min(+b3[1], 8);
-    const landMatches = t.match(/(\d{2,4})\s*m²/g);
-    if (landMatches) {
-      for (const lm of landMatches) {
-        const val = parseInt(lm.replace(/[^\d]/g, ""));
-        if (val >= 50 && val <= 5000) { land = val; break; }
+
+    // Method 1: Regex for text like "3 Bed 2 Bath 1 Car"
+    const b1 = t.match(/(\d+)\s*(?:Bed|bed|Beds|beds)/i); if (b1) beds = Math.min(+b1[1], 12);
+    const b2 = t.match(/(\d+)\s*(?:Bath|bath|Baths|baths)/i); if (b2) baths = Math.min(+b2[1], 8);
+    const b3 = t.match(/(\d+)\s*(?:Car|car|Cars|cars|Park|park|Garag)/i); if (b3) cars = Math.min(+b3[1], 8);
+
+    // Method 2: REA uses icons (🛏🚿🚗 or SVGs), so look for pattern of small numbers
+    // Pattern: "6 6 1 652.7m² · Duplex" — sequential standalone digits = beds, baths, cars
+    if (beds === 0) {
+      // Match sequences like "6 6 1" or "3 2 2" followed by m² or property type
+      const seqMatch = t.match(/(?:^|[\s·•])(\d{1,2})\s+(\d{1,2})\s+(\d{1,2})\s/);
+      if (seqMatch) {
+        beds = Math.min(+seqMatch[1], 12);
+        baths = Math.min(+seqMatch[2], 8);
+        cars = Math.min(+seqMatch[3], 8);
       }
     }
-    for (const k of ["Duplex/semi-detached", "Duplex", "Apartment", "Unit", "Townhouse", "Villa", "Semi-detached", "Semi", "Terrace", "Studio", "House"]) {
-      const kLower = k.toLowerCase();
-      if (t.toLowerCase().includes(kLower)) { type = k.includes("Duplex") ? "Duplex" : k.includes("Semi") ? "Semi" : k; break; }
+
+    // Method 3: Look for isolated single/double-digit numbers near property features
+    if (beds === 0) {
+      const nums = [];
+      const parts = t.split(/[\s·•,\|]+/);
+      for (const p of parts) {
+        const trimmed = p.trim();
+        if (/^\d{1,2}$/.test(trimmed) && +trimmed > 0 && +trimmed <= 12) {
+          nums.push(+trimmed);
+        }
+        // Stop collecting after we hit m² or property type keywords
+        if (/m²|House|Unit|Duplex|Townhouse|Apartment|Villa|Semi/i.test(trimmed)) break;
+      }
+      if (nums.length >= 3) { beds = nums[0]; baths = nums[1]; cars = nums[2]; }
+      else if (nums.length === 2) { beds = nums[0]; baths = nums[1]; }
+      else if (nums.length === 1) { beds = nums[0]; }
+    }
+
+    // Land size: handle decimals like "652.7m²" and plain "541m²"
+    const lm = t.match(/(\d{2,4})(?:\.\d+)?\s*m²/g);
+    if (lm) {
+      for (const l of lm) {
+        const val = parseInt(l.replace(/[^\d]/g, ""));
+        // For "652.7m²", parseInt gets 6527, so use parseFloat instead
+        const fval = parseFloat(l.match(/[\d.]+/)[0]);
+        const landVal = Math.round(fval);
+        if (landVal >= 50 && landVal <= 5000) { land = landVal; break; }
+      }
+    }
+
+    // Property type — check for Duplex/semi-detached first
+    for (const k of ["Duplex/semi-detached", "Duplex/Semi-Detached", "Duplex", "Apartment", "Unit", "Townhouse", "Villa", "Semi-detached", "Semi", "Terrace", "Studio", "House"]) {
+      if (t.toLowerCase().includes(k.toLowerCase())) { type = k.includes("Duplex") || k.includes("duplex") ? "Duplex" : k.includes("Semi") ? "Semi" : k; break; }
     }
     return { beds, baths, cars, land, type };
   }
 
   function removeAll() { document.querySelectorAll(".mfi-bar,.mfi-detail-panel").forEach(el => el.remove()); }
 
-  function row3(label, siteVal, seekrVal, oursVal, oursClass) {
-    return `<tr>
-      <td class="mfi-t-label">${label}</td>
-      <td class="mfi-t-site">${siteVal}</td>
-      <td class="mfi-t-seekr">${seekrVal}</td>
-      <td class="mfi-t-ours ${oursClass || ''}">${oursVal}</td>
-    </tr>`;
-  }
+  // ─── SCORE COLOR ────────────────────────────────────────────────────────────
 
-  // ─── BUILD ANALYSIS BAR (used for both search & listing) ──────────────────
-
-  function buildBarHtml(a, listedPrice, isEstimated, subName) {
-    const vsClass = +a.vsMedian <= 0 ? "mfi-green" : +a.vsMedian <= 20 ? "mfi-amber" : "mfi-red";
-    const cfClass = a.weekCashflow >= 0 ? "mfi-green" : "mfi-red";
-    const estTag = isEstimated ? '<span class="mfi-tag mfi-tag-est">⚡ Est. Price</span>' : '';
-
-    return `
-      <div class="mfi-bar-top">
-        <div class="mfi-bar-score-area" style="background:${a.color}">
-          <span class="mfi-bar-score-num">${a.score}</span>
-          <span class="mfi-bar-score-verdict">${a.verdict}</span>
-        </div>
-        <div class="mfi-bar-headline">
-          <span>${subName || 'Investment'} Analysis</span>
-          <span class="mfi-bar-subhead">Rent $${a.rent}/wk · Yield ${a.grossYield}% · ${+a.vsMedian > 0 ? '+' : ''}${a.vsMedian}% vs median</span>
-        </div>
-        <div class="mfi-bar-tags">
-          ${a.reasons.slice(0, 3).map(r => `<span class="mfi-tag">${r}</span>`).join("")}
-          ${estTag}
-        </div>
-      </div>
-      <table class="mfi-compare-table mfi-compact-table">
-        <thead><tr>
-          <th class="mfi-t-label"></th>
-          <th class="mfi-t-site"><span class="mfi-th-dot mfi-dot-grey"></span>${siteName}</th>
-          <th class="mfi-t-seekr"><span class="mfi-th-dot mfi-dot-orange"></span>Property Seekr</th>
-          <th class="mfi-t-ours"><span class="mfi-th-dot mfi-dot-green"></span>MF Investor</th>
-        </tr></thead>
-        <tbody>
-          ${row3("Price", listedPrice, listedPrice, isEstimated ? `<b>~${fmt(a.price || 0)}</b> (est.)` : listedPrice)}
-          ${row3("Rental Est.", "❌", "❌", `<b>$${a.rent}/wk</b>`, "mfi-green")}
-          ${row3("Gross Yield", "❌", "❌", `<b>${a.grossYield}%</b>`, "mfi-green")}
-          ${row3("vs Median", "❌", "❌", `<b>${+a.vsMedian > 0 ? '+' : ''}${a.vsMedian}%</b>`, vsClass)}
-          ${row3("5yr Projection", "❌", "❌", `<b>${fmt(a.proj5)}</b>`, "mfi-green")}
-          ${row3("Cashflow", "❌", "❌", `<b>${a.weekCashflow >= 0 ? '+' : ''}$${a.weekCashflow}/wk</b>`, cfClass)}
-          ${row3("Score Basis", "❌ None", "Lifestyle fit", "<b>Financial ROI</b>", "mfi-green")}
-        </tbody>
-      </table>
-      <div class="mfi-bar-source">Data: ${subName ? subName + ' via' : ''} CoreLogic · Live from backend API · Not financial advice</div>
-    `;
+  function scoreColor(score) {
+    if (score >= 80) return { bg: "#059669", text: "#ecfdf5" };      // emerald
+    if (score >= 65) return { bg: "#10b981", text: "#ecfdf5" };      // green
+    if (score >= 50) return { bg: "#f59e0b", text: "#451a03" };      // amber
+    return { bg: "#ef4444", text: "#fef2f2" };                        // red
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // SEARCH RESULTS
+  // SEARCH RESULTS — Clean bar below each card
   // ═══════════════════════════════════════════════════════════════════════════
 
   async function handleSearch() {
     const urlSuburb = detectSuburbFromUrl();
     if (!urlSuburb) return;
 
-    // Pre-fetch data for the URL suburb (primary)
     const subData = await fetchSuburbData(urlSuburb.name, urlSuburb.postcode);
 
     let cards = [];
     if (site === "domain") {
       document.querySelectorAll('[data-testid^="listing-card-wrapper"]').forEach(c => cards.push(c));
-      if (!cards.length) document.querySelectorAll('li[class*="listing"], div[class*="listing-result"]').forEach(c => { if (!cards.includes(c)) cards.push(c); });
+      if (!cards.length) document.querySelectorAll('li[class*="listing"]').forEach(c => { if (!cards.includes(c)) cards.push(c); });
     }
     if (site === "rea") {
-      // REA cards: articles, card divs, or anything wrapping a property link
       document.querySelectorAll("article").forEach(el => {
         if (el.querySelector('a[href*="/property-"]')) cards.push(el);
       });
-      // Broader: any element wrapping a /property- link
       if (!cards.length) {
         document.querySelectorAll('a[href*="/property-"]').forEach(l => {
           let p = l.parentElement;
           for (let i = 0; i < 6 && p; i++) {
             const cn = (p.className || "").toLowerCase();
-            const tn = p.tagName;
-            if (tn === "ARTICLE" || tn === "SECTION" ||
-                cn.includes("card") || cn.includes("listing") ||
-                cn.includes("result") || cn.includes("property")) {
+            if (p.tagName === "ARTICLE" || cn.includes("card") || cn.includes("listing") || cn.includes("result")) {
               if (!cards.includes(p)) cards.push(p);
               break;
             }
@@ -281,7 +205,6 @@
           }
         });
       }
-      // Last resort: direct parent divs of property links
       if (!cards.length) {
         document.querySelectorAll('a[href*="/property-"]').forEach(l => {
           const p = l.closest("div");
@@ -290,7 +213,7 @@
       }
     }
 
-    console.log(`[MFI] Search: found ${cards.length} cards on ${site}`);
+    console.log(`[MFI] Search: ${cards.length} cards`);
 
     const cardQueue = [];
     for (const card of cards) {
@@ -298,69 +221,74 @@
       card.dataset.mfiDone = "1";
 
       const text = card.textContent || "";
-
-      // Detect which suburb THIS card belongs to (for multi-suburb searches)
       let cardSuburb = null;
-      for (const p of SUBURB_PATTERNS) {
-        if (p.regex.test(text)) { cardSuburb = { name: p.name, postcode: p.postcode }; break; }
-      }
+      for (const p of SUBURB_PATTERNS) { if (p.regex.test(text)) { cardSuburb = { name: p.name, postcode: p.postcode }; break; } }
       if (!cardSuburb) cardSuburb = urlSuburb;
 
-      // Get suburb data (use cached if already fetched)
       let cardSubData = subData;
-      if (cardSuburb.name !== urlSuburb.name) {
-        cardSubData = await fetchSuburbData(cardSuburb.name, cardSuburb.postcode);
-      }
-      const subName = cardSubData?.name || cardSuburb.name.split(" ").map(w => w[0].toUpperCase() + w.slice(1)).join(" ");
+      if (cardSuburb.name !== urlSuburb.name) cardSubData = await fetchSuburbData(cardSuburb.name, cardSuburb.postcode);
 
       let price = parsePrice(text);
       let isEstimated = false;
       const f = extractFeatures(text);
 
-      // If no price found, ALWAYS estimate for listing cards
-      // (REA often shows no price text at all, not just "Contact Agent")
       if (!price) {
         const estByBed = cardSubData?.estByBed || {};
-        const bedKey = Math.min(Math.max(f.beds || 3, 1), 6);
-        price = estByBed[bedKey] || cardSubData?.house?.medianPrice || 900000;
-        const isUnit = /unit|apartment|studio|townhouse|villa/i.test(f.type);
-        if (isUnit) price = Math.round(price * 0.75);
+        price = estByBed[Math.min(Math.max(f.beds || 3, 1), 6)] || cardSubData?.house?.medianPrice || 900000;
+        if (/unit|apartment|studio|townhouse|villa/i.test(f.type)) price = Math.round(price * 0.75);
         isEstimated = true;
       }
-
       if (!price) continue;
 
-      // Queue the analysis (don't await here — batch later)
-      cardQueue.push({ card, cardSuburb, price, f, isEstimated, subName });
+      cardQueue.push({ card, cardSuburb, price, f, isEstimated, cardSubData });
     }
 
-    // Process all cards in parallel (batch API calls)
-    console.log(`[MFI] Processing ${cardQueue.length} cards in parallel`);
-    const results = await Promise.allSettled(
-      cardQueue.map(async ({ card, cardSuburb, price, f, isEstimated, subName }) => {
+    console.log(`[MFI] Processing ${cardQueue.length} cards`);
+
+    await Promise.allSettled(
+      cardQueue.map(async ({ card, cardSuburb, price, f, isEstimated, cardSubData }) => {
         const apiResult = await fetchAnalysis(cardSuburb.name, cardSuburb.postcode, price, f.beds, f.baths, f.land, f.type);
         if (!apiResult?.analysis) return;
 
         const a = apiResult.analysis;
-        a.price = price;
-
-        let listedPrice = "—";
-        const text = card.textContent || "";
-        const pm = text.match(/\$\d{1,3}(?:,\d{3}){1,2}\s*[-–]\s*\$\d{1,3}(?:,\d{3}){1,2}|\$\d{1,3}(?:,\d{3}){1,2}/);
-        if (pm) listedPrice = pm[0].trim();
-        if (isEstimated) listedPrice = "Contact Agent";
+        const sc = scoreColor(a.score);
+        const subName = cardSubData?.name || cardSuburb.name.split(" ").map(w => w[0].toUpperCase() + w.slice(1)).join(" ");
 
         const bar = document.createElement("div");
         bar.className = "mfi-bar";
-        bar.innerHTML = buildBarHtml(a, listedPrice, isEstimated, subName);
+        bar.innerHTML = `
+          <div class="mfi-bar-score" style="background:${sc.bg};color:${sc.text}">
+            <div class="mfi-bar-score-num">${a.score}</div>
+            <div class="mfi-bar-score-label">${a.verdict}</div>
+          </div>
+          <div class="mfi-bar-metrics">
+            <div class="mfi-bar-metric">
+              <div class="mfi-bar-metric-val">$${a.rent}/wk</div>
+              <div class="mfi-bar-metric-label">Est. Rent</div>
+            </div>
+            <div class="mfi-bar-metric">
+              <div class="mfi-bar-metric-val">${a.grossYield}%</div>
+              <div class="mfi-bar-metric-label">Gross Yield</div>
+            </div>
+            <div class="mfi-bar-metric">
+              <div class="mfi-bar-metric-val">${fmt(a.proj5)}</div>
+              <div class="mfi-bar-metric-label">5yr Projection</div>
+            </div>
+            <div class="mfi-bar-metric">
+              <div class="mfi-bar-metric-val">${a.dom} days</div>
+              <div class="mfi-bar-metric-label">Days on Market</div>
+            </div>
+          </div>
+          ${isEstimated ? '<div class="mfi-bar-est">⚡ Price estimated from suburb median</div>' : ''}
+          <div class="mfi-bar-brand">${subName} · SW Sydney Property Investor</div>
+        `;
         card.after(bar);
       })
     );
-    console.log(`[MFI] Done: ${results.filter(r => r.status === 'fulfilled').length} succeeded, ${results.filter(r => r.status === 'rejected').length} failed`);
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // SINGLE LISTING
+  // SINGLE LISTING — Clean floating panel
   // ═══════════════════════════════════════════════════════════════════════════
 
   async function handleListing() {
@@ -371,11 +299,10 @@
 
     const subData = await fetchSuburbData(suburbInfo.name, suburbInfo.postcode);
     const subName = subData?.name || suburbInfo.name.split(" ").map(w => w[0].toUpperCase() + w.slice(1)).join(" ");
-
     const pageText = document.body.textContent || "";
 
-    // --- PRICE ---
-    let price = null, listedPriceStr = "—";
+    // Price extraction
+    let price = null, listedPriceStr = "";
     document.querySelectorAll('[class*="rice"], [class*="Price"], [data-testid*="price"]').forEach(el => {
       if (price) return;
       const t = el.textContent.trim();
@@ -394,31 +321,123 @@
       const m = pageText.match(/\$\d{1,3}(?:,\d{3}){1,2}\s*[-–]\s*\$\d{1,3}(?:,\d{3}){1,2}/);
       if (m) { price = parsePrice(m[0]); listedPriceStr = m[0]; }
     }
-    if (price && (price < 100000 || price > 5000000)) { price = null; }
+    if (price && (price < 100000 || price > 5000000)) price = null;
 
     let address = ""; const h1 = document.querySelector("h1"); if (h1) address = h1.textContent.trim();
-    const f = extractFeatures(pageText);
+
+    // ─── TARGETED feature extraction for listing pages ───────────────────
+    // Don't scan entire page text — find the specific feature/summary area
+    let f = { beds: 0, baths: 0, cars: 0, land: 0, type: "House" };
+
+    if (site === "rea") {
+      // REA: features are in a strip with icons near the top of the listing
+      // Look for the features section specifically
+      document.querySelectorAll('[class*="feature"], [class*="Feature"], [class*="property-info"], [class*="propertyFeatures"], [class*="general-features"], [aria-label]').forEach(el => {
+        const text = el.textContent.trim().toLowerCase();
+        const aria = (el.getAttribute("aria-label") || "").toLowerCase();
+        const combined = text + " " + aria;
+        const num = parseInt(text.replace(/[^\d]/g, "")) || 0;
+        if (num > 0 && num <= 12) {
+          if (combined.includes("bed") && f.beds === 0) f.beds = num;
+          else if (combined.includes("bath") && f.baths === 0) f.baths = num;
+          else if ((combined.includes("car") || combined.includes("parking") || combined.includes("garage")) && f.cars === 0) f.cars = num;
+        }
+      });
+
+      // Fallback: look for the summary line near the address (e.g. "3 🛏 2 🚿 2 🚗 541m² · House")
+      if (f.beds === 0) {
+        // Find the area near the h1/address that has the feature strip
+        const headerArea = document.querySelector('[class*="summary"], [class*="Summary"], [class*="highlights"], [class*="property-features"]');
+        if (headerArea) {
+          const ht = headerArea.textContent;
+          const bm = ht.match(/(\d+)\s*(?:Bed|bed)/i); if (bm) f.beds = Math.min(+bm[1], 12);
+          const btm = ht.match(/(\d+)\s*(?:Bath|bath)/i); if (btm) f.baths = Math.min(+btm[1], 8);
+          const cm = ht.match(/(\d+)\s*(?:Car|car|Park|Garage)/i); if (cm) f.cars = Math.min(+cm[1], 8);
+        }
+      }
+
+      // Land size: look specifically for m² near property details, not the entire page
+      document.querySelectorAll('[class*="feature"], [class*="Feature"], [class*="property-info"], [class*="size"]').forEach(el => {
+        if (f.land > 0) return;
+        const lm = el.textContent.match(/(\d{2,4})\s*m²/);
+        if (lm) {
+          const val = parseInt(lm[1]);
+          if (val >= 50 && val <= 5000) f.land = val;
+        }
+      });
+
+      // Property type
+      document.querySelectorAll('[class*="propertyType"], [class*="property-type"], [class*="PropertyType"], [class*="type"]').forEach(el => {
+        const t = el.textContent.trim();
+        for (const k of ["Duplex", "Apartment", "Unit", "Townhouse", "Villa", "Semi", "Terrace", "Studio", "House"]) {
+          if (t.toLowerCase().includes(k.toLowerCase())) { f.type = k.includes("Duplex") ? "Duplex" : k; return; }
+        }
+      });
+    }
+
+    if (site === "domain") {
+      // Domain: features are in data-testid elements
+      document.querySelectorAll('[data-testid*="feature"], [data-testid*="bed"], [data-testid*="bath"], [data-testid*="car"]').forEach(el => {
+        const text = el.textContent.trim().toLowerCase();
+        const testid = (el.getAttribute("data-testid") || "").toLowerCase();
+        const num = parseInt(text.replace(/[^\d]/g, "")) || 0;
+        if (num > 0 && num <= 12) {
+          if (testid.includes("bed") && f.beds === 0) f.beds = num;
+          else if (testid.includes("bath") && f.baths === 0) f.baths = num;
+          else if (testid.includes("car") && f.cars === 0) f.cars = num;
+        }
+      });
+    }
+
+    // Final fallback: use a limited section of text near the top (first 500 chars after h1)
+    if (f.beds === 0) {
+      // Get text near the property header only, not the whole page
+      let nearHeader = "";
+      const h1El = document.querySelector("h1");
+      if (h1El) {
+        let el = h1El;
+        for (let i = 0; i < 5 && el; i++) {
+          el = el.nextElementSibling;
+          if (el) nearHeader += " " + el.textContent;
+        }
+      }
+      // Limit to 800 chars to avoid picking up random numbers from the rest of the page
+      nearHeader = nearHeader.substring(0, 800);
+      const tempF = extractFeatures(nearHeader);
+      if (tempF.beds > 0) f.beds = tempF.beds;
+      if (tempF.baths > 0) f.baths = tempF.baths;
+      if (tempF.cars > 0) f.cars = tempF.cars;
+      if (tempF.land > 0) f.land = tempF.land;
+      if (tempF.type !== "House") f.type = tempF.type;
+    }
+
+    // If we still have nothing, try the URL (REA URLs contain type: /property-house-nsw-...)
+    if (f.type === "House") {
+      const urlLower = location.href.toLowerCase();
+      if (urlLower.includes("/property-unit")) f.type = "Unit";
+      else if (urlLower.includes("/property-apartment")) f.type = "Apartment";
+      else if (urlLower.includes("/property-townhouse")) f.type = "Townhouse";
+      else if (urlLower.includes("/property-villa")) f.type = "Villa";
+      else if (urlLower.includes("/property-duplex")) f.type = "Duplex";
+    }
+
+    console.log(`[MFI] Listing extracted: ${f.beds}bed/${f.baths}bath/${f.cars}car, ${f.land}m², ${f.type}, price=${price}`);
 
     let isEstimated = false;
     if (!price) {
       const estByBed = subData?.estByBed || {};
       price = estByBed[Math.min(Math.max(f.beds || 3, 1), 6)] || subData?.house?.medianPrice || 900000;
-      const isUnit = /unit|apartment|studio|townhouse|villa/i.test(f.type);
-      if (isUnit) price = Math.round(price * 0.75);
+      if (/unit|apartment|studio|townhouse|villa/i.test(f.type)) price = Math.round(price * 0.75);
       isEstimated = true;
-      listedPriceStr = "Contact Agent";
+      listedPriceStr = "Not disclosed";
     }
-
     if (!price) return false;
 
-    // Call backend for analysis
     const apiResult = await fetchAnalysis(suburbInfo.name, suburbInfo.postcode, price, f.beds, f.baths, f.land, f.type);
     const a = apiResult?.analysis;
     if (!a) return false;
 
-    const sd = apiResult.suburbData || {};
-    const vsClass = +a.vsMedian <= 0 ? "mfi-green" : "mfi-red";
-    const cfClass = a.weekCashflow >= 0 ? "mfi-green" : "mfi-red";
+    const sc = scoreColor(a.score);
 
     const panel = document.createElement("div");
     panel.className = "mfi-detail-panel";
@@ -427,67 +446,38 @@
         <span>🏠 ${subName} Investor</span>
         <button class="mfi-panel-close">✕</button>
       </div>
-      ${address ? `<div class="mfi-panel-addr-bar">${address}</div>` : ""}
-      <div class="mfi-panel-score-box" style="background:${a.color}12;border:2px solid ${a.color}">
-        <div class="mfi-score-big" style="color:${a.color}">${a.score}/100</div>
-        <div class="mfi-verdict-big" style="color:${a.color}">${a.verdict}</div>
+
+      ${address ? `<div class="mfi-panel-addr">${address}</div>` : ""}
+
+      <div class="mfi-panel-score" style="background:${sc.bg};color:${sc.text}">
+        <div class="mfi-panel-score-num">${a.score}/100</div>
+        <div class="mfi-panel-score-label">${a.verdict}</div>
       </div>
-      <div class="mfi-panel-compare-wrap">
-        <table class="mfi-compare-table">
-          <thead><tr>
-            <th class="mfi-t-label">Basic Info</th>
-            <th class="mfi-t-site"><span class="mfi-th-dot mfi-dot-grey"></span>${siteName}</th>
-            <th class="mfi-t-seekr"><span class="mfi-th-dot mfi-dot-orange"></span>PropertySeekr</th>
-            <th class="mfi-t-ours"><span class="mfi-th-dot mfi-dot-green"></span>MF Investor</th>
-          </tr></thead>
-          <tbody>
-            ${row3("Price", listedPriceStr, listedPriceStr, isEstimated ? `~${fmt(price)} (est.)` : listedPriceStr)}
-            ${row3("Beds / Bath / Car", `${f.beds}/${f.baths}/${f.cars}`, `${f.beds}/${f.baths}/${f.cars}`, `${f.beds}/${f.baths}/${f.cars}`)}
-            ${row3("Land Size", f.land ? f.land.toLocaleString() + "m²" : "—", f.land ? f.land.toLocaleString() + "m²" : "—", f.land ? f.land.toLocaleString() + "m²" : "—")}
-            ${row3("Type", f.type, f.type, f.type)}
-          </tbody>
-        </table>
-        <div class="mfi-compare-divider"></div>
-        <table class="mfi-compare-table">
-          <thead><tr>
-            <th class="mfi-t-label">Investment Intel</th><th class="mfi-t-site"></th><th class="mfi-t-seekr"></th><th class="mfi-t-ours"></th>
-          </tr></thead>
-          <tbody>
-            ${row3("Est. Weekly Rent", '<span class="mfi-no">❌</span>', '<span class="mfi-no">❌</span>', `<b>$${a.rent}/wk</b>`, "mfi-green")}
-            ${row3("Annual Income", '<span class="mfi-no">❌</span>', '<span class="mfi-no">❌</span>', `<b>$${a.annualRent?.toLocaleString()}/yr</b>`, "mfi-green")}
-            ${row3("Gross Yield", '<span class="mfi-no">❌</span>', '<span class="mfi-no">❌</span>', `<b>${a.grossYield}%</b>`, "mfi-green")}
-            ${row3("Net Yield (est.)", '<span class="mfi-no">❌</span>', '<span class="mfi-no">❌</span>', `<b>${a.netYield}%</b>`, "mfi-green")}
-            ${row3("vs Suburb Median", '<span class="mfi-no">❌</span>', '<span class="mfi-no">❌</span>', `<b>${+a.vsMedian > 0 ? '+' : ''}${a.vsMedian}%</b>`, vsClass)}
-            ${row3("Mortgage (80% LVR)", '<span class="mfi-no">❌</span>', '<span class="mfi-no">❌</span>', `<b>$${a.weeklyRepayment}/wk</b>`, "")}
-            ${row3("Weekly Cashflow", '<span class="mfi-no">❌</span>', '<span class="mfi-no">❌</span>', `<b>${a.weekCashflow >= 0 ? '+' : ''}$${a.weekCashflow}/wk</b>`, cfClass)}
-            ${row3("5yr Projection", '<span class="mfi-no">❌</span>', '<span class="mfi-no">❌</span>', `<b>${fmt(a.proj5)}</b>`, "mfi-green")}
-            ${row3("Capital Gain (5yr)", '<span class="mfi-no">❌</span>', '<span class="mfi-no">❌</span>', `<b>+${fmt(a.equity5)}</b>`, "mfi-green")}
-            ${row3("10yr Projection", '<span class="mfi-no">❌</span>', '<span class="mfi-no">❌</span>', `<b>${fmt(a.proj10)}</b>`, "mfi-green")}
-            ${row3("Growth Rate", '<span class="mfi-no">❌</span>', '<span class="mfi-no">❌</span>', `<b>+${a.growth}% p.a.</b>`, "mfi-green")}
-            ${row3("Days on Market", '<span class="mfi-no">❌</span>', '<span class="mfi-no">❌</span>', `<b>${a.dom} days</b>`, "mfi-green")}
-            ${a.isDuplex ? row3("Dual Income", '<span class="mfi-no">❌</span>', '<span class="mfi-no">❌</span>', '<b>🏠🏠 Yes</b>', "mfi-green") : ""}
-          </tbody>
-        </table>
-        <div class="mfi-compare-divider"></div>
-        <table class="mfi-compare-table">
-          <thead><tr><th class="mfi-t-label">Approach</th><th class="mfi-t-site"></th><th class="mfi-t-seekr"></th><th class="mfi-t-ours"></th></tr></thead>
-          <tbody>
-            ${row3("Scoring", '<span class="mfi-no">❌ None</span>', "AI Match Score", `<b>${a.score}/100</b>`, "mfi-green")}
-            ${row3("Score Basis", '<span class="mfi-no">❌ None</span>', "Lifestyle preferences", "<b>Financial ROI</b>", "mfi-green")}
-            ${row3("Target User", "Browsers", "Home buyers", "<b>Investors</b>", "mfi-green")}
-            ${row3("AI Analysis", '<span class="mfi-no">❌</span>', "✅ Dream home match", "✅ Investment analysis", "mfi-green")}
-            ${row3("Suburb Insights", "Basic median", '<span class="mfi-no">❌</span>', "✅ Full market data", "mfi-green")}
-          </tbody>
-        </table>
+
+      <div class="mfi-panel-metrics">
+        <div class="mfi-panel-metric">
+          <div class="mfi-panel-metric-val">$${a.rent}/wk</div>
+          <div class="mfi-panel-metric-label">Est. Rent</div>
+        </div>
+        <div class="mfi-panel-metric">
+          <div class="mfi-panel-metric-val">${a.grossYield}%</div>
+          <div class="mfi-panel-metric-label">Gross Yield</div>
+        </div>
+        <div class="mfi-panel-metric">
+          <div class="mfi-panel-metric-val">${fmt(a.proj5)}</div>
+          <div class="mfi-panel-metric-label">5yr Projection</div>
+        </div>
+        <div class="mfi-panel-metric">
+          <div class="mfi-panel-metric-val">${a.dom} days</div>
+          <div class="mfi-panel-metric-label">Days on Market</div>
+        </div>
       </div>
-      <div class="mfi-panel-reasons">
-        ${a.reasons.map(r => `<span class="mfi-reason-tag">${r}</span>`).join("")}
-      </div>
+
+      ${isEstimated ? '<div class="mfi-panel-est">⚡ Price estimated from suburb median</div>' : ''}
+
       <div class="mfi-panel-footer">
-        <b>Data:</b> Live from backend API · ${subName} ${suburbInfo.postcode} · Source: CoreLogic via YIP<br>
-        <b>Suburb:</b> Median ${fmt(sd.medianHouse || 0)} · Rent $${sd.rentHouse || '?'}/wk · Growth ${sd.growthHouse || '?'}% · ${sd.dom || '?'} days<br>
-        ${isEstimated ? '<b>⚡ Price estimated</b> from suburb median<br>' : ''}
-        <b>⚠️ Not financial advice.</b> Verify independently.
+        ${subName} ${suburbInfo.postcode} · Median ${fmt(subData?.house?.medianPrice || 0)} · Growth ${subData?.house?.annualGrowth || '?'}% p.a.<br>
+        Source: CoreLogic via YIP · Not financial advice
       </div>
     `;
 
@@ -547,7 +537,6 @@
   if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
     chrome.runtime.onMessage.addListener((m, s, r) => {
       if (m.action === "scrape") r({ site, bars: document.querySelectorAll(".mfi-bar").length });
-      if (m.action === "setApiBase") { API_BASE = m.url; r({ status: "ok" }); }
       return true;
     });
   }
