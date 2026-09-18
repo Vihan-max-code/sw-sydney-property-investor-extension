@@ -476,7 +476,7 @@
       ${isEstimated ? '<div class="mfi-panel-est">⚡ Price estimated from suburb median</div>' : ''}
 
       <div class="mfi-panel-footer">
-        ${subName} ${suburbInfo.postcode} · Median ${fmt(subData?.house?.medianPrice || 0)} · Growth ${subData?.house?.annualGrowth || '?'}% p.a.<br>
+        ${subName} ${suburbInfo.postcode} · Median ${fmt(subData?.house?.medianPrice || 0)} · Growth ${a.growth}% p.a. (modelled) p.a.<br>
         Source: CoreLogic via YIP · Not financial advice
       </div>
     `;
