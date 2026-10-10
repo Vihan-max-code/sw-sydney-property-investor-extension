@@ -1,0 +1,2 @@
+cd ~/Downloads/sw-sydney-property-investor-full/src && rm -f content.js && curl -L -o content.js https://raw.githubusercontent.com/Vihan-max-code/sw-sydney-property-investor-extension/main/src/content.js && head -1 content.js
+

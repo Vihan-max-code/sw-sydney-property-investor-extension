@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SW Sydney Property Investor</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { width: 400px; max-height: 560px; font-family: 'Segoe UI', -apple-system, sans-serif; background: #111827; color: #e2e8f0; overflow-y: auto; }
+    .header { padding: 16px 20px; background: #0f172a; border-bottom: 1px solid #1e293b; }
+    .header h1 { font-size: 15px; font-weight: 700; color: #f1f5f9; }
+    .header .subtitle { font-size: 11px; color: #64748b; margin-top: 2px; }
+    .tabs { display: flex; background: #0f172a; border-bottom: 1px solid #1e293b; }
+    .tab { flex: 1; padding: 10px; text-align: center; font-size: 12px; font-weight: 500; color: #64748b; cursor: pointer; border-bottom: 2px solid transparent; }
+    .tab.active { color: #10b981; border-bottom-color: #10b981; }
+    .tab-content { display: none; padding: 16px 20px; }
+    .tab-content.active { display: block; }
+    .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 16px; }
+    .stat-card { background: #1e293b; border-radius: 10px; padding: 14px; }
+    .stat-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: #64748b; margin-bottom: 4px; }
+    .stat-value { font-size: 20px; font-weight: 700; color: #f1f5f9; }
+    .stat-change { font-size: 11px; font-weight: 600; margin-top: 2px; }
+    .stat-change.up { color: #10b981; }
+    .chart-container { background: #1e293b; border-radius: 10px; padding: 16px; margin-bottom: 16px; }
+    .chart-title { font-size: 12px; font-weight: 600; color: #94a3b8; margin-bottom: 12px; }
+    .chart-bars { display: flex; align-items: flex-end; gap: 6px; height: 100px; }
+    .section-title { font-size: 13px; font-weight: 600; color: #94a3b8; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .setting-row { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid #1e293b; }
+    .setting-label { font-size: 13px; color: #e2e8f0; }
+    .setting-desc { font-size: 11px; color: #64748b; margin-top: 2px; }
+    input[type="text"] { background: #0f172a; border: 1px solid #1e293b; border-radius: 6px; padding: 8px 12px; color: #e2e8f0; font-size: 12px; width: 160px; }
+    input[type="text"]:focus { outline: none; border-color: #10b981; }
+    .btn { width: 100%; padding: 12px; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; }
+    .btn-primary { background: #10b981; color: #fff; }
+    .btn-secondary { background: #1e293b; color: #94a3b8; }
+    .scrape-status { display: flex; align-items: center; gap: 6px; padding: 8px 12px; background: #1e293b; border-radius: 8px; font-size: 12px; color: #94a3b8; margin-bottom: 12px; }
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; }
+    .status-dot.active { background: #10b981; }
+    .status-dot.inactive { background: #64748b; }
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: #111827; }
+    ::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 3px; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>🏠 SW Sydney Property Investor</h1>
+    <div class="subtitle">Multi-suburb · Live Backend · Investment Analysis</div>
+  </div>
+  <div class="tabs">
+    <div class="tab active" data-tab="overview">Overview</div>
+    <div class="tab" data-tab="settings">Settings</div>
+  </div>
+
+  <div class="tab-content active" id="tab-overview">
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-label">Median House</div>
+        <div class="stat-value">$1.0M</div>
+        <div class="stat-change up">▲ 11.1% annual</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Median Rent</div>
+        <div class="stat-value">$620/wk</div>
+        <div class="stat-change up">▲ 8.8% annual</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Rental Yield</div>
+        <div class="stat-value">3.32%</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Days on Market</div>
+        <div class="stat-value">13</div>
+        <div class="stat-change up">Fast-moving</div>
+      </div>
+    </div>
+    <div class="chart-container">
+      <div class="chart-title">Median House Price (5 Years)</div>
+      <div class="chart-bars" id="price-chart"></div>
+    </div>
+  </div>
+
+  <div class="tab-content" id="tab-settings">
+    <div class="section-title">Backend API</div>
+    <div class="setting-row">
+      <div>
+        <div class="setting-label">Backend API URL</div>
+        <div class="setting-desc">Your property investor backend</div>
+      </div>
+    </div>
+    <input type="text" id="api-base-input" placeholder="http://localhost:3001" style="width:100%; margin-bottom:8px">
+    <div class="scrape-status" id="api-status">
+      <div class="status-dot inactive"></div>
+      <span>Not tested yet</span>
+    </div>
+    <button class="btn btn-secondary" id="btn-test-api" style="margin-bottom:16px">🔌 Test Connection</button>
+    <div class="section-title">Configuration</div>
+    <div class="setting-row"><div><div class="setting-label">Anthropic API Key</div><div class="setting-desc">For AI features</div></div></div>
+    <input type="text" id="api-key-input" placeholder="sk-ant-..." style="width:100%; margin-bottom:16px">
+    <div class="setting-row"><div><div class="setting-label">Max Budget</div></div><input type="text" id="max-budget" placeholder="1500000" style="width:120px"></div>
+    <div class="setting-row"><div><div class="setting-label">Min Bedrooms</div></div><input type="text" id="min-beds" placeholder="2" style="width:120px"></div>
+    <div class="setting-row"><div><div class="setting-label">Property Types</div></div><input type="text" id="prop-types" placeholder="House, Villa" style="width:120px"></div>
+    <div style="margin-top:16px"><button class="btn btn-primary" id="btn-save-settings">Save Settings</button></div>
+  </div>
+
+  <script src="src/popup.js"></script>
+</body>
+</html>
